@@ -1,0 +1,161 @@
+<?php
+
+/*
+Plugin Name: SST Shipping Method
+Description: SST shipping method plugin
+Version: 1.0.0
+Author: SST
+*/
+
+/**
+ * Check if WooCommerce plugin is active
+ */
+if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
+
+  function sst_shipping_method()
+  {
+    if (!class_exists('WC_SST_SHIPPING_METHOD')) {
+      class WC_SST_SHIPPING_METHOD extends WC_Shipping_Method
+      {
+        public $min_amount = 0;
+        public $title_free;
+
+        /**
+         * Constructor for your shipping class
+         *
+         * @access public
+         * @return void
+         */
+        public function __construct($instance_id = 0)
+        {
+          $this->id                 = 'sst_shipping_method'; // id for shipping method
+          $this->instance_id        = absint($instance_id);
+          $this->method_title       = __('SST Shipping Method'); // title shown in admin
+          $this->method_description = __('Description of SST shipping method'); // description shown in admin
+          $this->supports           = array(
+            'shipping-zones',
+            'instance-settings',
+            'instance-settings-modal',
+            // 'settings', // Slår på en extra sida i shipping fliken 
+          );
+
+          $this->init();
+        }
+
+
+        /**
+         * Init your settings
+         *
+         * @access public
+         * @return void
+         */
+        function init()
+        {
+          // Load the settings API
+          $this->init_instance_form_settings();
+          $this->init_settings(); // This is part of the settings API. Loads settings you previously init.
+
+          // user defined values goes here, not in construct 
+          $this->enabled            = $this->get_option('enabled');
+          $this->title              = $this->get_option('title');
+          //$this->cost = $this->get_option('cost');
+          $this->title_free         = $this->get_option('title_free');
+          $this->cost               = $this->get_option('cost', 0);
+          $this->min_amount         = $this->get_option('min_amount', 0);
+          $this->tax_status         = $this->get_option('tax_status');
+
+
+          // Save settings in admin if you have any defined
+          add_action('woocommerce_update_options_shipping_' . $this->id, array($this, 'process_admin_options'));
+        }
+
+        /**
+         * Initialise Gateway Settings Instance Form Fields
+         */
+        function init_instance_form_settings()
+        {
+          $this->instance_form_fields = array(
+            'title' => array(
+              'title' => __('Shipping Title', 'woocommerce'),
+              'type' => 'text',
+              'description' => __('This controls the title which the user sees during checkout.', 'woocommerce'),
+              'default' => __('Express', 'woocommerce'),
+              'desc_tip'    => true, // gives question mark with description text on hover next to title admin view
+            ),
+            'title_free' => array(
+              'title' => __('Title', 'woocommerce'),
+              'type' => 'text',
+              'description' => __('The title which the user sees when free shipping amount is reached.', 'woocommerce'),
+              'default' => __('Free shipping', 'woocommerce')
+            ),
+            'description' => array(
+              'title' => __('Description', 'woocommerce'),
+              'type' => 'textarea',
+              'description' => __('This controls the description which the user sees during checkout.', 'woocommerce'),
+              'default' => __("Express Delivery", 'woocommerce'),
+              'desc_tip' => true // gives qustion mark next to decription and hides description if not hover over questionmark
+            ),
+            'tax_status' => array(
+              'title'   => __('Tax status', 'woocommerce'),
+              'type'    => 'select',
+              'class'   => 'wc-enhanced-select',
+              'default' => 'taxable',
+              'options' => array(
+                'taxable' => __('Taxable', 'woocommerce'),
+                'none'    => _x('None', 'Tax status', 'woocommerce'),
+              ),
+            ),
+            'cost'       => array(
+              'title'       => __('Cost', 'woocommerce'),
+              'type'        => 'number',
+              'placeholder' => 0,
+              'description' => __('Optional cost for shipping method.', 'woocommerce'),
+              'default'     => 0,
+              'desc_tip'    => true,
+            ),
+            'min_amount' => array(
+              'title' => __('Minimum amount free shipping', 'woocommerce'),
+              'type' => 'number',
+              'description' => __('This controls the minimum amount for free shipping', 'woocommerce'),
+              'default' => '0'
+            )
+          );
+        } // End instance_init_form_fields()
+
+        /**
+         * calculate_shipping function.
+         *
+         * @access public
+         * @param array $package 
+         * @return void
+         */
+        public function calculate_shipping($package = array())
+        {
+          $total = WC()->cart->get_displayed_subtotal();
+          $cost = $total > $this->min_amount ? 0 : $this->get_option('cost');
+          $label = $cost === 0 ? __($this->title_free, "Woocommerce") : __($this->title, "Woocommerce");
+
+
+          $rate = array(
+            'label' => $label,
+            'cost' => $cost,
+            'package' => $package,
+          );
+          $this->add_rate($rate);
+        }
+      }
+    }
+  }
+
+
+  add_action('woocommerce_shipping_init', 'sst_shipping_method');
+
+
+  function add_sst_shipping_method($methods)
+  {
+    $methods['sst_shipping_method'] = 'WC_SST_SHIPPING_METHOD';
+    return $methods;
+  }
+
+  add_filter('woocommerce_shipping_methods', 'add_sst_shipping_method');
+}
