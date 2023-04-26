@@ -3,3 +3,14 @@ Theme Name: Storefront Child
 Author: Sara Pellnor, Sam Azimi & Therese Lindén
 template: storefront
 */
+
+/* TODO Kolla om vi kan enquea detta i functions.php istället för hårdkodat i admin - anpassa -> custom css */
+.phone-checkout {
+  margin-top: 1.41575rem;
+}
+
+.back-to-cart-btn {
+  margin-bottom: 2.16em;
+  background: #7f54b3;
+  color: #fff;
+}
