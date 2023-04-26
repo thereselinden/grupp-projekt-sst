@@ -2,6 +2,7 @@ wp-admin
 wp-includes
 wp-content/plugins/woocommerce
 wp-content/themes/storefront
+wp-content/languages/
 
 wp-activate.php
 .htaccess
