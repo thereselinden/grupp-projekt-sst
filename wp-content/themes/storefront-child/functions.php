@@ -2,7 +2,7 @@
 
 /*
  * Check if woocommerce plugin is active
- */
+*/
 
 if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
   add_action('storefront_before_header', 'sst_display_coupons');
@@ -19,9 +19,8 @@ function sst_display_coupons()
 }
 
 /*
- * 
- */
-
+  * Remove sidebar if woocommerce pages 
+*/
 function sst_remove_sidebar_product_pages()
 {
   if (is_woocommerce() || is_checkout()) {
@@ -30,17 +29,24 @@ function sst_remove_sidebar_product_pages()
 }
 add_action('get_header', 'sst_remove_sidebar_product_pages');
 
-
+/* 
+  * Hide header on checkout page
+*/
 function sst_remove_header_from_cart()
 {
   if (is_checkout()) {
     remove_action('storefront_page', 'storefront_page_header', 10);
     remove_action('storefront_before_content', 'storefront_header_widget_region', 10);
     remove_all_actions('storefront_header');
+    //SKA VI TIITTA PÅ woocommerce_before_checkout_form och se ifall header HTML element försvinner?
   }
 }
 add_action('wp_head', 'sst_remove_header_from_cart');
 
+
+/* 
+  * Hide footer on checkout page
+*/
 function sst_remove_footer_from_cart()
 {
   if (is_checkout()) {
@@ -71,7 +77,9 @@ function sst_change_coupon_location()
 }
 add_action('init', 'sst_change_coupon_location');
 
-
+/* 
+ * Link to redirect to cart from checkout page
+*/
 function sst_back_to_cart()
 { ?>
 
@@ -81,3 +89,21 @@ function sst_back_to_cart()
 
 <?php };
 add_action('woocommerce_review_order_before_payment', 'sst_back_to_cart', 99);
+
+
+/**
+ * Shortcode to render field data to post content 
+ */
+function sst_shortcode_test()
+{
+  $store_address     = get_field('gatuadress');
+  $store_postcode    = get_field('postnummer');
+  $store_city        = get_field('stad');
+  $store_country     = 'Sweden';
+  $store_number      = get_field('telefon');
+
+  $address = '<div>' . $store_number . '</br>' . $store_address . '</br>' . $store_postcode . ', ' . $store_city . '</br>' . $store_country . '</div>';
+
+  return $address;
+}
+add_shortcode('adress', 'sst_shortcode_test');
