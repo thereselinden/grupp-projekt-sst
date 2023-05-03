@@ -10,6 +10,7 @@ Author: SST
 /**
  * Check if WooCommerce plugin is active
  */
+
 if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
 
   function sst_shipping_method()
@@ -19,6 +20,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
       {
         public $min_amount = 0;
         public $title_free;
+        public $cost;
 
         /**
          * Constructor for your shipping class
@@ -63,6 +65,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
           $this->cost               = $this->get_option('cost', 0);
           $this->min_amount         = $this->get_option('min_amount', 0);
           $this->tax_status         = $this->get_option('tax_status');
+          $this->type                 = $this->get_option('type', 'class');
 
 
           // Save settings in admin if you have any defined
@@ -83,10 +86,11 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'desc_tip'    => true, // gives question mark with description text on hover next to title admin view
             ),
             'title_free' => array(
-              'title' => __('Title', 'woocommerce'),
+              'title' => __('Free Shipping Title', 'woocommerce'),
               'type' => 'text',
               'description' => __('The title which the user sees when free shipping amount is reached.', 'woocommerce'),
-              'default' => __('Free shipping', 'woocommerce')
+              'default' => __('Free shipping', 'woocommerce'),
+              'desc_tip'    => true,
             ),
             'description' => array(
               'title' => __('Description', 'woocommerce'),
@@ -118,9 +122,61 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'type' => 'number',
               'description' => __('This controls the minimum amount for free shipping', 'woocommerce'),
               'default' => '0'
-            )
+            ),
           );
+
+          $shipping_classes = WC()->shipping()->get_shipping_classes();
+          $cost_desc = 'Enter cost for this shipping class';
+
+
+
+          if (!empty($shipping_classes)) {
+            $this->instance_form_fields['class_costs'] = array(
+              'title'       => __('Shipping class costs', 'woocommerce'),
+              'type'        => 'title',
+              'default'     => '',
+              /* translators: %s: URL for link. */
+              'description' => sprintf(__('These costs can optionally be added based on the <a href="%s">product shipping class</a>.', 'woocommerce'), admin_url('admin.php?page=wc-settings&tab=shipping&section=classes')),
+            );
+            foreach ($shipping_classes as $shipping_class) {
+              if (!isset($shipping_class->term_id)) {
+                continue;
+              }
+              $this->instance_form_fields['class_cost_' . $shipping_class->term_id] = array(
+                /* translators: %s: shipping class name */
+                'title'             => sprintf(__('"%s" shipping class cost', 'woocommerce'), esc_html($shipping_class->name)),
+                'type'              => 'text',
+                'placeholder'       => __('N/A', 'woocommerce'),
+                'description'       => $cost_desc,
+                'default'           => $this->get_option('class_cost_' . $shipping_class->slug), // Before 2.5.0, we used slug here which caused issues with long setting names.
+                'desc_tip'          => true,
+                //'sanitize_callback' => array($this, 'sanitize_cost'),
+              );
+            }
+
+            $this->instance_form_fields['no_class_cost'] = array(
+              'title'             => __('No shipping class cost', 'woocommerce'),
+              'type'              => 'text',
+              'placeholder'       => __('N/A', 'woocommerce'),
+              'description'       => $cost_desc,
+              'default'           => '',
+              'desc_tip'          => true,
+              // 'sanitize_callback' => array($this, 'sanitize_cost'),
+            );
+
+            $this->instance_form_fields['type'] = array(
+              'title'   => __('Calculation type', 'woocommerce'),
+              'type'    => 'select',
+              'class'   => 'wc-enhanced-select',
+              'default' => 'class',
+              'options' => array(
+                'class' => __('Per class: Charge shipping for each shipping class individually', 'woocommerce'),
+                'order' => __('Per order: Charge shipping for the most expensive shipping class', 'woocommerce'),
+              ),
+            );
+          }
         } // End instance_init_form_fields()
+
 
         /**
          * calculate_shipping function.
@@ -131,21 +187,141 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
          */
         public function calculate_shipping($package = array())
         {
+          $rate = array(
+            'label' => $this->title,
+            'cost' => 0,
+            'package' => $package,
+          );
+
+          // Calculate the costs.
+          // $has_costs = false; // True when a cost is set. False if all costs are blank strings.
+          $cost      = $this->get_option('cost');
+
+          if ('' !== $cost) {
+            // $has_costs    = true;
+            $rate['cost'] =  $cost;
+          }
+
+          // TODO Hämta fraktklass och sätt pris på frakt baserat på om produkt har klassen eller ej
+          $shipping_classes = WC()->shipping()->get_shipping_classes();
+
+          if (!empty($shipping_classes)) {
+            $found_shipping_classes = $this->find_shipping_classes($package);
+            $highest_class_cost     = 0;
+
+            foreach ($found_shipping_classes as $shipping_class => $products) {
+              // Also handles BW compatibility when slugs were used instead of ids.
+              $shipping_class_term = get_term_by('slug', $shipping_class, 'product_shipping_class');
+              $class_cost_string   = $shipping_class_term && $shipping_class_term->term_id ? $this->get_option('class_cost_' . $shipping_class_term->term_id, $this->get_option('class_cost_' . $shipping_class, '')) : $this->get_option('no_class_cost', '');
+
+              if ('' === $class_cost_string) {
+                continue;
+              }
+
+              //$has_costs  = true;
+              $class_cost =  $class_cost_string;
+
+              if ('class' === $this->type) {
+                $rate['cost'] += $class_cost;
+              } else {
+                $highest_class_cost = $class_cost > $highest_class_cost ? $class_cost : $highest_class_cost;
+              }
+            }
+
+            if ('order' === $this->type && $highest_class_cost) {
+              $rate['cost'] += $highest_class_cost;
+            }
+          }
+
+          // TODO Hämta varukorgens vikt för att indexera ett pris baserat på totala vikten
+          // Get cart total weight
+          // $total_weight =  WC()->cart->get_cart_contents_weight . ' ' . get_option('woocommerce_weight_unit');
+          // var_dump($total_weight);
+          // $total_weight =  WC()->cart->get_cart_contents_weight();
+          // print_r($total_weight);
+
+
+          // define the differents costs based on weight
+          // $weight_cost_1 = 1.1; // Up to 5 Kg
+          // $weight_cost_2 = 1.15; // Above 5 Kg and below 10 kg
+          // $weight_cost_3 = 1.3; // Above 10 kg
+
+          // if ($total_weight < 5) {
+          //   $rate['cost'] += $cost * 1.1;
+          // }
+
+          // if($total_weight < 5 { $cost * $weight_cost_1})
+          // if($total_weight > 5 || $total_weight < 10 { $cost * $weight_cost_2})
+          // if($total_weight > 10 { $cost * $weight_cost_3})
+
+          // TODO Hämta fraktzon kund har och räkna ut pris baserat på indexerat avstånd 
+          // Get shipping zone name
+          //$shipping_zone = WC_Shipping_Zones::get_zone_matching_package($package);
+          //$zone = $shipping_zone->get_zone_name();
+          // print_r($zone);
+
+          // if(zone === 'syd sverige') { $cost = $cost * 1.1}
+          // if(zone === 'mellan sverige') { $cost = $cost * 1.15}
+          // if(zone === 'nord sverige') { $cost = $cost * 1.4}
+
+
+
           $total = WC()->cart->get_displayed_subtotal();
           $cost = $total > $this->min_amount ? 0 : $this->get_option('cost');
           $label = $cost === 0 ? __($this->title_free, "Woocommerce") : __($this->title, "Woocommerce");
 
 
-          $rate = array(
-            'label' => $label,
-            'cost' => $cost,
-            'package' => $package,
-          );
+
+
           $this->add_rate($rate);
+        }
+
+        /**
+         * Finds and returns shipping classes and the products with said class.
+         *
+         * @param mixed $package Package of items from cart.
+         * @return array
+         */
+        public function find_shipping_classes($package)
+        {
+          $found_shipping_classes = array();
+
+
+          foreach ($package['contents'] as $item_id => $values) {;
+
+            if ($values['data']->needs_shipping()) {
+              $found_class = $values['data']->get_shipping_class();
+
+              if (!isset($found_shipping_classes[$found_class])) {
+                $found_shipping_classes[$found_class] = array();
+              }
+
+              $found_shipping_classes[$found_class][$item_id] = $values;
+            }
+          }
+
+          return $found_shipping_classes;
+        }
+
+        public function get_cart_weight()
+        {
+          $cart_weight = 0;
+
+          foreach (WC()->cart->get_cart() as $cart_item_key => $cart_item) {
+            $product = $cart_item['data'];
+
+            if ($product->has_weight()) {
+              $cart_weight += floatval($product->get_weight() * $cart_item['quantity']);
+            }
+          }
+
+          return $cart_weight;
         }
       }
     }
   }
+
+
 
 
   add_action('woocommerce_shipping_init', 'sst_shipping_method');
@@ -153,6 +329,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
 
   function add_sst_shipping_method($methods)
   {
+
     $methods['sst_shipping_method'] = 'WC_SST_SHIPPING_METHOD';
     return $methods;
   }
