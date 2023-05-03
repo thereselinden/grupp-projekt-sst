@@ -18,7 +18,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
     if (!class_exists('WC_SST_SHIPPING_METHOD')) {
       class WC_SST_SHIPPING_METHOD extends WC_Shipping_Method
       {
-        public $min_amount = 0;
+        // public $min_amount = 0;
         public $title_free;
         public $cost;
 
@@ -63,9 +63,12 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
           //$this->cost = $this->get_option('cost');
           $this->title_free         = $this->get_option('title_free');
           $this->cost               = $this->get_option('cost', 0);
-          $this->min_amount         = $this->get_option('min_amount', 0);
+          $this->cost_weight        = $this->get_option('cost_weight', 0);
+          $this->cost_distance      = $this->get_option('cost_distance', 0);
+          //$this->min_amount         = $this->get_option('min_amount', 0);
           $this->tax_status         = $this->get_option('tax_status');
-          $this->type                 = $this->get_option('type', 'class');
+          $this->type               = $this->get_option('type', 'class');
+
 
 
           // Save settings in admin if you have any defined
@@ -85,13 +88,13 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'default' => __('Express', 'woocommerce'),
               'desc_tip'    => true, // gives question mark with description text on hover next to title admin view
             ),
-            'title_free' => array(
-              'title' => __('Free Shipping Title', 'woocommerce'),
-              'type' => 'text',
-              'description' => __('The title which the user sees when free shipping amount is reached.', 'woocommerce'),
-              'default' => __('Free shipping', 'woocommerce'),
-              'desc_tip'    => true,
-            ),
+            // 'title_free' => array(
+            //   'title' => __('Free Shipping Title', 'woocommerce'),
+            //   'type' => 'text',
+            //   'description' => __('The title which the user sees when free shipping amount is reached.', 'woocommerce'),
+            //   'default' => __('Free shipping', 'woocommerce'),
+            //   'desc_tip'    => true,
+            // ),
             'description' => array(
               'title' => __('Description', 'woocommerce'),
               'type' => 'textarea',
@@ -117,12 +120,28 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'default'     => 0,
               'desc_tip'    => true,
             ),
-            'min_amount' => array(
-              'title' => __('Minimum amount free shipping', 'woocommerce'),
-              'type' => 'number',
-              'description' => __('This controls the minimum amount for free shipping', 'woocommerce'),
-              'default' => '0'
+            'cost_weight'       => array(
+              'title'       => __('Cost Weight', 'woocommerce'),
+              'type'        => 'number',
+              'placeholder' => 0,
+              'description' => __('Optional weight cost per kg', 'woocommerce'),
+              'default'     => 0,
+              'desc_tip'    => true,
             ),
+            'cost_distance'       => array(
+              'title'       => __('Cost Distance', 'woocommerce'),
+              'type'        => 'number',
+              'placeholder' => 0,
+              'description' => __('Optional distance cost per km.', 'woocommerce'),
+              'default'     => 0,
+              'desc_tip'    => true,
+            ),
+            // 'min_amount' => array(
+            //   'title' => __('Minimum amount free shipping', 'woocommerce'),
+            //   'type' => 'number',
+            //   'description' => __('This controls the minimum amount for free shipping', 'woocommerce'),
+            //   'default' => '0'
+            // ),
           );
 
           $shipping_classes = WC()->shipping()->get_shipping_classes();
@@ -150,7 +169,6 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
                 'description'       => $cost_desc,
                 'default'           => $this->get_option('class_cost_' . $shipping_class->slug), // Before 2.5.0, we used slug here which caused issues with long setting names.
                 'desc_tip'          => true,
-                //'sanitize_callback' => array($this, 'sanitize_cost'),
               );
             }
 
@@ -161,7 +179,6 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'description'       => $cost_desc,
               'default'           => '',
               'desc_tip'          => true,
-              // 'sanitize_callback' => array($this, 'sanitize_cost'),
             );
 
             $this->instance_form_fields['type'] = array(
@@ -233,45 +250,64 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
             }
           }
 
-          // TODO Hämta varukorgens vikt för att indexera ett pris baserat på totala vikten
-          // Get cart total weight
-          // $total_weight =  WC()->cart->get_cart_contents_weight . ' ' . get_option('woocommerce_weight_unit');
-          // var_dump($total_weight);
-          // $total_weight =  WC()->cart->get_cart_contents_weight();
-          // print_r($total_weight);
+          // Totalvikt kundvagnen
+          $cart_total_weight =  WC()->cart->get_cart_contents_weight();
+          // Hämta kostnad per kg från admin
+          $weight_km_cost = $this->get_option('cost_weight');
+          // Extra kostnad för vikten 
+          $weight_extra_cost = $cart_total_weight * $weight_km_cost;
+          // Uppdatera kostnaden genom att addera kostnad för vikt
+          $rate['cost'] = $cost + $weight_extra_cost;
+
+          //Koordinater från kunden som anger informationen i varukorgen 
+          $city = $package['destination']['city'];
+          $zip = $package['destination']['postcode'];
+          $country = $package['destination']['country'];
+          $api_key = 'AIzaSyAgPkfhYPLSbfysdE1B6uZYZ9vED89m-Es';
+          $url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' . $zip . '+' . $city . '+' . $country . '&key=' . $api_key;
+          $to_json_data = file_get_contents($url);
+
+          // Decode JSON data into PHP array
+          $response_data = json_decode($to_json_data);
+
+          // Kundens koordinater
+          $to_lat = $response_data->results[0]->geometry->location->lat;
+          $to_lon = $response_data->results[0]->geometry->location->lng;
 
 
-          // define the differents costs based on weight
-          // $weight_cost_1 = 1.1; // Up to 5 Kg
-          // $weight_cost_2 = 1.15; // Above 5 Kg and below 10 kg
-          // $weight_cost_3 = 1.3; // Above 10 kg
+          //Koordinater för huvudkontoret 
+          $store_city = get_option('woocommerce_store_city');
+          $store_postcode = get_option('woocommerce_store_postcode');
+          $store_country = get_option('woocommerce_default_country');
+          $address =  $store_postcode . '+' . $store_city . '+' . $store_country;
+          $storeUrl = 'https://maps.googleapis.com/maps/api/geocode/json?address=' . $address . '&key=' . $api_key;
 
-          // if ($total_weight < 5) {
-          //   $rate['cost'] += $cost * 1.1;
-          // }
+          $from_json_data = file_get_contents($storeUrl);
 
-          // if($total_weight < 5 { $cost * $weight_cost_1})
-          // if($total_weight > 5 || $total_weight < 10 { $cost * $weight_cost_2})
-          // if($total_weight > 10 { $cost * $weight_cost_3})
+          // Decode JSON data into PHP array
+          $response_data_store = json_decode($from_json_data);
 
-          // TODO Hämta fraktzon kund har och räkna ut pris baserat på indexerat avstånd 
-          // Get shipping zone name
-          //$shipping_zone = WC_Shipping_Zones::get_zone_matching_package($package);
-          //$zone = $shipping_zone->get_zone_name();
-          // print_r($zone);
+          // Huvudbutikens koordinater (Woocommerce -> Inställningar -> Allmänt addressen)
+          $from_lat = $response_data_store->results[0]->geometry->location->lat;
+          $from_lon = $response_data_store->results[0]->geometry->location->lng;
 
-          // if(zone === 'syd sverige') { $cost = $cost * 1.1}
-          // if(zone === 'mellan sverige') { $cost = $cost * 1.15}
-          // if(zone === 'nord sverige') { $cost = $cost * 1.4}
-
-
-
-          $total = WC()->cart->get_displayed_subtotal();
-          $cost = $total > $this->min_amount ? 0 : $this->get_option('cost');
-          $label = $cost === 0 ? __($this->title_free, "Woocommerce") : __($this->title, "Woocommerce");
+          // Räkna ut distans i km med funktioen distance()
+          $distance = $this->distance($to_lat, $to_lon, $from_lat, $from_lon, 'K');
+          // Extra kostnad för distance per km från admin 
+          $distance_km_cost = $this->get_option('cost_distance');
+          // Extra kostnad att betala baserat på distancen från huvudkontoret 
+          $distance_extra_cost = round($distance * $distance_km_cost);
+          // Uppdatera kostnad med diance kostnad
+          $rate['cost'] = $cost +  $distance_extra_cost;
 
 
+          // $total = WC()->cart->get_displayed_subtotal();
+          // $cost = $total > $this->min_amount ? 0 : $this->get_option('cost');
+          // $label = $cost === 0 ? __($this->title_free, "Woocommerce") : __($this->title, "Woocommerce");
 
+
+          $rate['label'] = 'Distance:' . $distance_extra_cost . 'Weight:' . $weight_extra_cost;
+          //$rate['label'] = $label; // TO PRINT DATA TO DOM USED LABEL 
 
           $this->add_rate($rate);
         }
@@ -303,19 +339,27 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
           return $found_shipping_classes;
         }
 
-        public function get_cart_weight()
+        // https://www.geodatasource.com/developers/php
+        public function distance($lat1, $lon1, $lat2, $lon2, $unit)
         {
-          $cart_weight = 0;
+          if (($lat1 == $lat2) && ($lon1 == $lon2)) {
+            return 0;
+          } else {
+            $theta = $lon1 - $lon2;
+            $dist = sin(deg2rad($lat1)) * sin(deg2rad($lat2)) +  cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * cos(deg2rad($theta));
+            $dist = acos($dist);
+            $dist = rad2deg($dist);
+            $miles = $dist * 60 * 1.1515;
+            $unit = strtoupper($unit);
 
-          foreach (WC()->cart->get_cart() as $cart_item_key => $cart_item) {
-            $product = $cart_item['data'];
-
-            if ($product->has_weight()) {
-              $cart_weight += floatval($product->get_weight() * $cart_item['quantity']);
+            if ($unit == "K") {
+              return ($miles * 1.609344);
+            } else if ($unit == "N") {
+              return ($miles * 0.8684);
+            } else {
+              return $miles;
             }
           }
-
-          return $cart_weight;
         }
       }
     }
