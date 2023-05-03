@@ -1,5 +1,7 @@
 wp-admin
 wp-includes
+wp-content/mu-plugins
+wp-content/plugins
 wp-content/plugins/woocommerce
 wp-content/themes/storefront
 wp-content/languages/
