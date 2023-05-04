@@ -14,3 +14,24 @@ template: storefront
   background: #7f54b3;
   color: #fff;
 }
+
+.term-description {
+  margin-bottom: 2.617924em;
+  background-color: #7f54b3;
+  margin-left: 0;
+  border-radius: 2px;
+  color: #fff;
+  clear: both;
+  border-left: 0.6180469716em solid rgba(0, 0, 0, 0.15);
+  padding: 1em 2em 1em 3.5em;
+  position: relative;
+  list-style: none outside;
+}
+
+.term-description p {
+  margin: 0 !important;
+}
+
+.entry-content {
+  margin-bottom: 2rem;
+}

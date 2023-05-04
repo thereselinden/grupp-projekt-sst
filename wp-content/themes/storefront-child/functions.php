@@ -1,22 +1,6 @@
 <?php
 
-/*
- * Check if woocommerce plugin is active
-*/
 
-if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')))) {
-  add_action('storefront_before_header', 'sst_display_coupons');
-} else {
-  return;
-}
-
-/*
- * Echo string before storefront header
- */
-function sst_display_coupons()
-{
-  echo 'Detta är en rabatt kupong';
-}
 
 /*
   * Remove sidebar if woocommerce pages 
