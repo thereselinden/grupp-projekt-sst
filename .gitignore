@@ -5,6 +5,7 @@ wp-content/plugins
 wp-content/plugins/woocommerce
 wp-content/themes/storefront
 wp-content/languages/
+wp-content/uploads/wc-logs
 
 wp-activate.php
 .htaccess
