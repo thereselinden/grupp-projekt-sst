@@ -2,9 +2,9 @@
 
 /*
 Plugin Name: SST Shipping Method
-Description: SST shipping method plugin
+Description: SST shipping method plugin. Allows you to specify shipping cost based on shipping class, total cart weight and distance from heade office.
 Version: 1.0.0
-Author: SST
+Author: Grupp 7
 */
 
 /**
@@ -18,9 +18,8 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
     if (!class_exists('WC_SST_SHIPPING_METHOD')) {
       class WC_SST_SHIPPING_METHOD extends WC_Shipping_Method
       {
-        // public $min_amount = 0;
+
         public $title_free;
-        public $cost;
 
         /**
          * Constructor for your shipping class
@@ -60,12 +59,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
           // user defined values goes here, not in construct 
           $this->enabled            = $this->get_option('enabled');
           $this->title              = $this->get_option('title');
-          //$this->cost = $this->get_option('cost');
           $this->title_free         = $this->get_option('title_free');
           $this->cost               = $this->get_option('cost', 0);
           $this->cost_weight        = $this->get_option('cost_weight', 0);
           $this->cost_distance      = $this->get_option('cost_distance', 0);
-          //$this->min_amount         = $this->get_option('min_amount', 0);
           $this->tax_status         = $this->get_option('tax_status');
           $this->type               = $this->get_option('type', 'class');
 
@@ -88,13 +85,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'default' => __('Express', 'woocommerce'),
               'desc_tip'    => true, // gives question mark with description text on hover next to title admin view
             ),
-            // 'title_free' => array(
-            //   'title' => __('Free Shipping Title', 'woocommerce'),
-            //   'type' => 'text',
-            //   'description' => __('The title which the user sees when free shipping amount is reached.', 'woocommerce'),
-            //   'default' => __('Free shipping', 'woocommerce'),
-            //   'desc_tip'    => true,
-            // ),
+
             'description' => array(
               'title' => __('Description', 'woocommerce'),
               'type' => 'textarea',
@@ -136,12 +127,7 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
               'default'     => 0,
               'desc_tip'    => true,
             ),
-            // 'min_amount' => array(
-            //   'title' => __('Minimum amount free shipping', 'woocommerce'),
-            //   'type' => 'number',
-            //   'description' => __('This controls the minimum amount for free shipping', 'woocommerce'),
-            //   'default' => '0'
-            // ),
+
           );
 
           $shipping_classes = WC()->shipping()->get_shipping_classes();
@@ -210,16 +196,17 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
             'package' => $package,
           );
 
-          // Calculate the costs.
-          // $has_costs = false; // True when a cost is set. False if all costs are blank strings.
+          // Get cost from admin panel.
+          $has_costs = false;
           $cost      = $this->get_option('cost');
 
+          // If cost added - update rate array value
           if ('' !== $cost) {
-            // $has_costs    = true;
+            $has_costs = true;
             $rate['cost'] =  $cost;
           }
 
-          // TODO Hämta fraktklass och sätt pris på frakt baserat på om produkt har klassen eller ej
+          // Get shippingc classes and update shipping price based on class
           $shipping_classes = WC()->shipping()->get_shipping_classes();
 
           if (!empty($shipping_classes)) {
@@ -227,15 +214,13 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
             $highest_class_cost     = 0;
 
             foreach ($found_shipping_classes as $shipping_class => $products) {
-              // Also handles BW compatibility when slugs were used instead of ids.
               $shipping_class_term = get_term_by('slug', $shipping_class, 'product_shipping_class');
               $class_cost_string   = $shipping_class_term && $shipping_class_term->term_id ? $this->get_option('class_cost_' . $shipping_class_term->term_id, $this->get_option('class_cost_' . $shipping_class, '')) : $this->get_option('no_class_cost', '');
 
               if ('' === $class_cost_string) {
                 continue;
               }
-
-              //$has_costs  = true;
+              $has_costs  = true;
               $class_cost =  $class_cost_string;
 
               if ('class' === $this->type) {
@@ -250,25 +235,32 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
             }
           }
 
+
+          // KOSTAND FÖR VIKT
           // Totalvikt kundvagnen
           $cart_total_weight =  WC()->cart->get_cart_contents_weight();
-          // Hämta kostnad per kg från admin
+          // Hämta kostnad per kg från admin (öka varje kg med X kronor)
           $weight_km_cost = $this->get_option('cost_weight');
           // Extra kostnad för vikten 
           $weight_extra_cost = $cart_total_weight * $weight_km_cost;
           // Uppdatera kostnaden genom att addera kostnad för vikt
-          $rate['cost'] = $cost + $weight_extra_cost;
+          $rate['cost'] = $rate['cost'] + $weight_extra_cost;
 
+
+
+
+          // KOSTNAD FÖR DISTANCE
           //Koordinater från kunden som anger informationen i varukorgen 
           $city = $package['destination']['city'];
           $zip = $package['destination']['postcode'];
           $country = $package['destination']['country'];
           $api_key = 'AIzaSyAgPkfhYPLSbfysdE1B6uZYZ9vED89m-Es';
           $url = 'https://maps.googleapis.com/maps/api/geocode/json?address=' . $zip . '+' . $city . '+' . $country . '&key=' . $api_key;
-          $to_json_data = file_get_contents($url);
+          $to_json_data = file_get_contents($url); // kind of fetch 
 
           // Decode JSON data into PHP array
           $response_data = json_decode($to_json_data);
+
 
           // Kundens koordinater
           $to_lat = $response_data->results[0]->geometry->location->lat;
@@ -298,16 +290,10 @@ if (in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_
           // Extra kostnad att betala baserat på distancen från huvudkontoret 
           $distance_extra_cost = round($distance * $distance_km_cost);
           // Uppdatera kostnad med diance kostnad
-          $rate['cost'] = $cost +  $distance_extra_cost;
+          $rate['cost'] = $rate['cost'] +  $distance_extra_cost;
 
 
-          // $total = WC()->cart->get_displayed_subtotal();
-          // $cost = $total > $this->min_amount ? 0 : $this->get_option('cost');
-          // $label = $cost === 0 ? __($this->title_free, "Woocommerce") : __($this->title, "Woocommerce");
-
-
-          $rate['label'] = 'Distance:' . $distance_extra_cost . 'Weight:' . $weight_extra_cost;
-          //$rate['label'] = $label; // TO PRINT DATA TO DOM USED LABEL 
+          //$rate['label'] = 'Base shipping: '  . $cost . ' ' . 'Distance: ' . $distance_extra_cost . ' kr ' . ' Weight: ' . $weight_extra_cost . ' kr ' . ' Shipping class: ' . $class_cost;
 
           $this->add_rate($rate);
         }
